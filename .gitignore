@@ -1,0 +1,15 @@
+.clj-kondo
+.cpcache
+.lsp
+!.lsp/config.edn
+.vscode
+.calva
+.nrepl-port
+.shadow-cljs
+.DS_Store
+node_modules
+*.iml
+.idea
+pom.xml
+*.pom.asc
+target/
