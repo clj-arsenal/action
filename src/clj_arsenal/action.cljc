@@ -2,7 +2,7 @@
   (:require
    [clojure.walk :as walk]
    [clj-arsenal.basis.queue :refer [empty-queue]]
-   [clj-arsenal.basis.protocols.chain :refer [chain chainable]]
+   [clj-arsenal.basis.protocols.chain :refer [chain chain-all chainable]]
    [clj-arsenal.basis :refer [try-fn error?]]
    [clj-arsenal.check :refer [check expect]]))
 
@@ -56,22 +56,22 @@
                         ::pending-leave []}
           context (if (ifn? context-builder)
                     (apply context-builder context-stub context-builder-params)
-      context-stub)]
+                    context-stub)]
       (chainable
         (fn [continue]
           (continue-dispatch context continue))))))
 
 (defn apply-injections
-  [injector context form]
-  (walk/postwalk
-    (fn [x]
-      (if-not (instance? Injection x)
-        x
-        (let [defer-depth (or (some-> x meta ::depth) 0)]
-          (if (pos? defer-depth)
-            (vary-meta x update ::depth dec)
-            (injector context x)))))
-    form))
+  [injector context form continue]
+  (chain-all form continue
+    :walker walk/postwalk
+    :mapper (fn [x]
+              (if-not (instance? Injection x)
+                x
+                (let [defer-depth (or (some-> x meta ::depth) 0)]
+                  (if (pos? defer-depth)
+                    (vary-meta x update ::depth dec)
+                    (injector context x)))))))
 
 (defn execute-pending-effects
   [executor injector {pending-effects ::pending-effects :as context}]
@@ -81,13 +81,16 @@
       (fn [continue]
         (let [next-effect (peek pending-effects)
               next-context (assoc context ::pending-effects (pop pending-effects))]
-          (chain
-            (try-fn #(executor next-context (apply-injections injector next-context next-effect))
-              :catch identity)
-            (fn [new-context]
-              (if (error? new-context)
-                new-context
-                (chain (execute-pending-effects executor injector new-context) continue)))))))))
+          (try-fn
+            (fn []
+              (apply-injections injector next-context next-effect
+                (fn [resolved-next-effect]
+                  (chain (try-fn #(executor next-context resolved-next-effect) :catch identity)
+                    (fn [new-context]
+                      (if (error? new-context)
+                        new-context
+                        (chain (execute-pending-effects executor injector new-context) continue)))))))
+            :catch continue))))))
 
 (defn effects "
 Creates an interceptor for executing effects.
@@ -176,8 +179,12 @@ Creates an interceptor for executing effects.
   (let [injector (fn [context {:keys [kind args]}]
                    (case kind
                      :exact (first args)))]
-    (expect =
-      ["foo" (<< :exact "bar")]
-      (apply-injections injector nil
-        [(<< :exact "foo") (<<< :exact "bar")]))))
-
+    (chainable
+      (fn [continue]
+        (apply-injections injector nil [(<< :exact "foo") (<<< :exact "bar")]
+          (fn [resolved]
+            (try-fn
+              (fn []
+                (expect = resolved ["foo" (<< :exact "bar")])
+                (continue nil))
+              :catch continue)))))))
