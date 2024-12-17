@@ -3,7 +3,7 @@
    [clojure.walk :as walk]
    [clj-arsenal.basis.queue :refer [empty-queue]]
    [clj-arsenal.basis.protocols.chain :refer [chain chain-all chainable]]
-   [clj-arsenal.basis :refer [try-fn error?]]
+   [clj-arsenal.basis :refer [try-fn error? schedule-once]]
    [clj-arsenal.check :refer [check expect]]))
 
 (defrecord Action [headers effects])
@@ -59,7 +59,7 @@
                     context-stub)]
       (chainable
         (fn [continue]
-          (continue-dispatch context continue))))))
+          (schedule-once 0 #(continue-dispatch context continue)))))))
 
 (defn apply-injections
   [injector context form continue]
