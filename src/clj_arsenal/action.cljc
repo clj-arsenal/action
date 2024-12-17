@@ -4,7 +4,8 @@
    [clj-arsenal.basis.queue :refer [empty-queue]]
    [clj-arsenal.basis.protocols.chain :refer [chain chain-all chainable]]
    [clj-arsenal.basis :refer [try-fn error? schedule-once]]
-   [clj-arsenal.check :refer [check expect]]))
+   [clj-arsenal.check :refer [check expect]]
+   [clj-arsenal.log :refer [log spy]]))
 
 (defrecord Action [headers effects])
 (defrecord Injection [kind args])
@@ -88,7 +89,7 @@
                   (chain (try-fn #(executor next-context resolved-next-effect) :catch identity)
                     (fn [new-context]
                       (if (error? new-context)
-                        new-context
+                        (continue new-context)
                         (chain (execute-pending-effects executor injector new-context) continue)))))))
             :catch continue))))))
 
@@ -97,6 +98,18 @@ Creates an interceptor for executing effects.
 " [executor injector]
   {::name ::effects
    ::enter (partial execute-pending-effects executor injector)})
+
+(defn errors "
+Log unhandled errors with clj-arsenal.log.
+" []
+  {::name ::errors
+   ::leave (fn [context]
+             (doseq [[interceptor-name {enter-error ::enter leave-error ::leave}] (::errors context)]
+               (when (error? enter-error)
+                 (log :error :msg "error entering interceptor" :interceptor interceptor-name :ex enter-error))
+               (when (error? leave-error)
+                 (log :error :msg "error leaving interceptor" :interceptor interceptor-name :ex leave-error)))
+             context)})
 
 (defn act
   [& items]
