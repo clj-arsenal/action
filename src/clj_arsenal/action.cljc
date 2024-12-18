@@ -3,7 +3,7 @@
    [clojure.walk :as walk]
    [clj-arsenal.basis.queue :refer [empty-queue]]
    [clj-arsenal.basis.protocols.chain :refer [chain chain-all chainable]]
-   [clj-arsenal.basis :refer [try-fn error? schedule-once]]
+   [clj-arsenal.basis :refer [try-fn error?] :as basis]
    [clj-arsenal.check :refer [check expect]]
    [clj-arsenal.log :refer [log spy]]))
 
@@ -60,7 +60,7 @@
                     context-stub)]
       (chainable
         (fn [continue]
-          (schedule-once 0 #(continue-dispatch context continue)))))))
+          (continue-dispatch context continue))))))
 
 (defn apply-injections
   [injector context form continue]
@@ -86,11 +86,13 @@
             (fn []
               (apply-injections injector next-context next-effect
                 (fn [resolved-next-effect]
-                  (chain (try-fn #(executor next-context resolved-next-effect) :catch identity)
-                    (fn [new-context]
-                      (if (error? new-context)
-                        (continue new-context)
-                        (chain (execute-pending-effects executor injector new-context) continue)))))))
+                  (if (error? resolved-next-effect)
+                    (continue resolved-next-effect)
+                    (chain (try-fn #(executor next-context resolved-next-effect) :catch identity)
+                      (fn [new-context]
+                        (if (error? new-context)
+                          (continue new-context)
+                          (chain (execute-pending-effects executor injector new-context) continue))))))))
             :catch continue))))))
 
 (defn effects "
@@ -100,7 +102,7 @@ Creates an interceptor for executing effects.
    ::enter (partial execute-pending-effects executor injector)})
 
 (defn errors "
-Log unhandled errors with clj-arsenal.log.
+Creates an interceptor to log unhandled errors with clj-arsenal.log.
 " []
   {::name ::errors
    ::leave (fn [context]
@@ -110,6 +112,27 @@ Log unhandled errors with clj-arsenal.log.
                (when (error? leave-error)
                  (log :error :msg "error leaving interceptor" :interceptor interceptor-name :ex leave-error)))
              context)})
+
+(defn throttle "
+Creates an interceptor to pause continuation until
+the `sig` signal is next triggered.
+" [sig & {:keys [after-batch]}]
+  (let [!batch (atom [])]
+    (basis/sig-listen sig
+      (fn []
+        (let [[batch _] (reset-vals! !batch [])
+              !batch-pending-counter (atom (count batch))]
+          (doseq [[continue-fn context] batch]
+            (continue-fn (assoc context ::batch-pending-counter !batch-pending-counter))))))
+    {::name ::throttle
+     ::enter (fn [context]
+               (chainable
+                 (fn [continue]
+                   (swap! !batch conj [continue context]))))
+     ::leave (fn [context]
+               (let [pending-count (swap! (::batch-pending-counter context) dec)]
+                 (when (and (zero? pending-count) (ifn? after-batch))
+                   (after-batch))))}))
 
 (defn act
   [& items]
