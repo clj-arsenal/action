@@ -132,7 +132,8 @@ the `sig` signal is next triggered.
      ::leave (fn [context]
                (let [pending-count (swap! (::batch-pending-counter context) dec)]
                  (when (and (zero? pending-count) (ifn? after-batch))
-                   (after-batch))))}))
+                   (after-batch)))
+               context)}))
 
 (defn act
   [& items]
