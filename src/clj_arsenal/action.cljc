@@ -137,12 +137,22 @@ the `sig` signal is next triggered.
 
 (defn act
   [& items]
-  (let [[headers effects] (if (map? (first items)) [(first items) (rest items)] [{} items])]
-    (when-some [bad-effect (some #(not (or (vector? %) (seq %))) (remove nil? effects))]
-      (throw
-        (ex-info "bad effect, must be a non-empty vector"
-          {::kind ::bad-effect
-           ::effect bad-effect})))
+  (let [[headers effects] (if (map? (first items)) [(first items) (rest items)] [{} items])
+        effects (mapcat
+                  (fn flatten-effects [effect]
+                    (cond
+                      (and (vector? effect) (seq (rest effect)))
+                      [effect]
+                      
+                      (seq? effect)
+                      effect
+                      
+                      (nil? effect)
+                      nil
+                      
+                      :else
+                      (throw (ex-info "invalid effect" {:problem ::bad-effect ::effect effect}))))
+                  effects)]
     (->Action headers effects)))
 
 (defn action?
