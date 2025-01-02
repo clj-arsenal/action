@@ -50,9 +50,11 @@
 
 (defn dispatcher
   [interceptors & {:keys [context-builder]}]
-  (fn dispatch [^Action action & context-builder-params]
+  (fn dispatch [action & context-builder-params]
+    (when-not (instance? Action action)
+      (throw (ex-info "dispatched something other than an action" {:dispatched action})))
     (let [context-stub {::action action
-                        ::pending-effects (into empty-queue (.-effects action))
+                        ::pending-effects (into empty-queue (.-effects ^Action action))
                         ::pending-enter (into empty-queue interceptors)
                         ::pending-leave []}
           context (if (ifn? context-builder)
@@ -63,9 +65,8 @@
           (continue-dispatch context continue))))))
 
 (defn apply-injections
-  [injector context form continue]
-  (chain-all form continue
-    :walker walk/postwalk
+  [injector context form]
+  (chain-all form
     :mapper (fn [x]
               (if-not (instance? Injection x)
                 x
@@ -84,7 +85,7 @@
               next-context (assoc context ::pending-effects (pop pending-effects))]
           (try-fn
             (fn []
-              (apply-injections injector next-context next-effect
+              (chain (apply-injections injector next-context next-effect)
                 (fn [resolved-next-effect]
                   (if (error? resolved-next-effect)
                     (continue resolved-next-effect)
@@ -112,28 +113,6 @@ Creates an interceptor to log unhandled errors with clj-arsenal.log.
                (when (error? leave-error)
                  (log :error :msg "error leaving interceptor" :interceptor interceptor-name :ex leave-error)))
              context)})
-
-(defn throttle "
-Creates an interceptor to pause continuation until
-the `sig` signal is next triggered.
-" [sig & {:keys [after-batch]}]
-  (let [!batch (atom [])]
-    (basis/sig-listen sig
-      (fn []
-        (let [[batch _] (reset-vals! !batch [])
-              !batch-pending-counter (atom (count batch))]
-          (doseq [[continue-fn context] batch]
-            (continue-fn (assoc context ::batch-pending-counter !batch-pending-counter))))))
-    {::name ::throttle
-     ::enter (fn [context]
-               (chainable
-                 (fn [continue]
-                   (swap! !batch conj [continue context]))))
-     ::leave (fn [context]
-               (let [pending-count (swap! (::batch-pending-counter context) dec)]
-                 (when (and (zero? pending-count) (ifn? after-batch))
-                   (after-batch)))
-               context)}))
 
 (defn act
   [& items]
@@ -166,6 +145,15 @@ the `sig` signal is next triggered.
 (defn <<<
   [kind & args]
   (with-meta (->Injection kind (vec args)) {::depth 1}))
+
+(defn inc-depth
+  [form]
+  (walk/postwalk
+    (fn [x]
+      (if (instance? Injection x)
+        (vary-meta x update ::depth (fnil inc 0))
+        x))
+    form))
 
 (defn injection?
   [x]
