@@ -8,7 +8,7 @@
    [clj-arsenal.log :refer [log spy]]))
 
 (defrecord Action [headers effects])
-(defrecord Injection [kind args])
+(defrecord Injection [depth kind args])
 
 (defn- continue-dispatch
   [{pending-enter ::pending-enter pending-leave ::pending-leave :as context} on-finish]
@@ -70,10 +70,9 @@
     :mapper (fn [x]
               (if-not (instance? Injection x)
                 x
-                (let [defer-depth (or (some-> x meta ::depth) 0)]
-                  (if (pos? defer-depth)
-                    (vary-meta x update ::depth dec)
-                    (injector context x)))))))
+                (if (pos? (:depth x))
+                  (update x :depth dec)
+                  (injector context x))))))
 
 (defn execute-pending-effects
   [executor injector {pending-effects ::pending-effects :as context}]
@@ -120,7 +119,7 @@ Creates an interceptor to log unhandled errors with clj-arsenal.log.
         effects (mapcat
                   (fn flatten-effects [effect]
                     (cond
-                      (and (vector? effect) (seq (rest effect)))
+                      (and (vector? effect) (seq effect))
                       [effect]
                       
                       (seq? effect)
@@ -140,18 +139,27 @@ Creates an interceptor to log unhandled errors with clj-arsenal.log.
 
 (defn <<
   [kind & args]
-  (->Injection kind (vec args)))
+  (->Injection 0 kind (vec args)))
 
 (defn <<<
-  [kind & args]
-  (with-meta (->Injection kind (vec args)) {::depth 1}))
+  [depth kind & args]
+  (->Injection depth kind (vec args)))
 
 (defn inc-depth
   [form]
   (walk/postwalk
     (fn [x]
       (if (instance? Injection x)
-        (vary-meta x update ::depth (fnil inc 0))
+        (update x :depth inc)
+        x))
+    form))
+
+(defn dec-depth
+  [form]
+  (walk/postwalk
+    (fn [x]
+      (if (instance? Injection x)
+        (update x :depth dec)
         x))
     form))
 
