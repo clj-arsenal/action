@@ -48,8 +48,12 @@
     (on-finish context))
   nil)
 
-(defn dispatcher
-  [interceptors & {:keys [context-builder]}]
+(defn dispatcher "
+Create a dispatcher.  `interceptors` is an ordered collection
+of interceptors.  `context-builder` is an optional function
+that takes a minimal initial dispatch context, and returns
+a modified version of the same.
+" [interceptors & {:keys [context-builder]}]
   (fn dispatch [action & context-builder-params]
     (when-not (instance? Action action)
       (throw (ex-info "dispatched something other than an action" {:dispatched action})))
@@ -64,7 +68,7 @@
         (fn [continue]
           (continue-dispatch context continue))))))
 
-(defn apply-injections
+(defn- apply-injections
   [injector context form]
   (chain-all form
     :mapper (fn [x]
@@ -74,7 +78,7 @@
                   (update x :depth dec)
                   (injector context x))))))
 
-(defn execute-pending-effects
+(defn- execute-pending-effects
   [executor injector {pending-effects ::pending-effects :as context}]
   (if (empty? pending-effects)
     context
@@ -113,8 +117,10 @@ Creates an interceptor to log unhandled errors with clj-arsenal.log.
                  (log :error :msg "error leaving interceptor" :interceptor interceptor-name :ex leave-error)))
              context)})
 
-(defn act
-  [& items]
+(defn act "
+Create an action.  Use like `(act {:as headers} & effects)` or `(act & effects)`,
+where each effect is a vector with an effect kind, and zero or more args.
+" [& items]
   (let [[headers effects] (if (map? (first items)) [(first items) (rest items)] [{} items])
         effects (mapcat
                   (fn flatten-effects [effect]
@@ -133,20 +139,28 @@ Creates an interceptor to log unhandled errors with clj-arsenal.log.
                   effects)]
     (->Action headers effects)))
 
-(defn action?
-  [x]
+(defn action? "
+Returns true if `x` is an action.
+" [x]
   (instance? Action x))
 
-(defn <<
-  [kind & args]
+(defn << "
+Creates an injection with a depth of 0.
+" [kind & args]
   (->Injection 0 kind (vec args)))
 
-(defn <<<
-  [depth kind & args]
+(defn <<< "
+Creates an injection with an arbitrary nesting depth.
+The depth of an injection determines when it's evaluated.
+If the depth is <= 0 when an effect is executed then the
+injection is resolved via the injector; otherwise it resolves
+to the same injection with its depth decremented.
+" [depth kind & args]
   (->Injection depth kind (vec args)))
 
-(defn inc-depth
-  [form]
+(defn inc-depth "
+Walks form, incrementing the depth of all injections.
+" [form]
   (walk/postwalk
     (fn [x]
       (if (instance? Injection x)
@@ -154,8 +168,9 @@ Creates an interceptor to log unhandled errors with clj-arsenal.log.
         x))
     form))
 
-(defn dec-depth
-  [form]
+(defn dec-depth "
+Walks form, decrementing the depth of all injections.
+" [form]
   (walk/postwalk
     (fn [x]
       (if (instance? Injection x)
@@ -163,8 +178,9 @@ Creates an interceptor to log unhandled errors with clj-arsenal.log.
         x))
     form))
 
-(defn injection?
-  [x]
+(defn injection? "
+Returns true if `x` is an injection.
+" [x]
   (instance? Injection x))
 
 (check ::simple-dispatch
