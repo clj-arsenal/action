@@ -1,11 +1,11 @@
 {:paths ["src"]
- :deps {me.raystubbs.clj-arsenal/check {:local/root "../check"}
-        me.raystubbs.clj-arsenal/log {:local/root "../log"}
-        me.raystubbs.clj-arsenal/basis {:local/root "../basis"}}
+ :deps {me.raystubbs.clj-arsenal/check {:mvn/version "0.0.2"}
+        me.raystubbs.clj-arsenal/log {:mvn/version "0.0.1"}
+        me.raystubbs.clj-arsenal/basis {:mvn/version "0.0.1"}}
 
  :aliases
  {:build
-  {:deps {me.raystubbs.clj-arsenal/build {:local/root "../build"}}
+  {:deps {me.raystubbs.clj-arsenal/build {:mvn/version "0.0.5"}}
    :ns-default clj-arsenal.build}
   
   :dev
@@ -18,7 +18,7 @@
    :clj-arsenal.check/ns-include-re "clj-arsenal[.]action([.].+)?"}}
 
  :clj-arsenal.build/meta
- {:version [0 0 0]
+ {:version "0.0.0"
   :name me.raystubbs.clj-arsenal/action
   :license "The MIT License"
   :license-url "https://opensource.org/license/mit/"
