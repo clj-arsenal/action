@@ -59,6 +59,7 @@ a modified version of the same.
       (throw (ex-info "dispatched something other than an action" {:dispatched action})))
     (let [context-stub {::action action
                         ::pending-effects (into empty-queue (.-effects ^Action action))
+                        ::executed-effects []
                         ::pending-enter (into empty-queue interceptors)
                         ::pending-leave []}
           context (if (ifn? context-builder)
@@ -78,8 +79,14 @@ a modified version of the same.
                   (update x :depth dec)
                   (injector context x))))))
 
-(defn- execute-pending-effects
-  [executor injector {pending-effects ::pending-effects :as context}]
+(defn- with-effect-error
+  [context error]
+  (-> context
+    (assoc-in [::errors ::effects ::enter] error)
+    (assoc ::pending-enter empty-queue)))
+
+(defn execute-pending-effects
+  [executor injector {pending-effects ::pending-effects executed-effects ::executed-effects :as context}]
   (if (empty? pending-effects)
     context
     (chainable
@@ -92,18 +99,19 @@ a modified version of the same.
                 (fn [resolved-next-effect]
                   (if (error? resolved-next-effect)
                     (continue resolved-next-effect)
-                    (chain (try-fn #(executor next-context resolved-next-effect) :catch identity)
-                      (fn [new-context]
-                        (if (error? new-context)
-                          (continue new-context)
-                          (chain (execute-pending-effects executor injector new-context) continue))))))))
-            :catch continue))))))
+                    (let [next-context (assoc next-context ::executed-effects (conj executed-effects resolved-next-effect))]
+                      (chain (try-fn #(executor next-context resolved-next-effect) :catch identity)
+                        (fn [new-context]
+                          (if (error? new-context)
+                            (continue (with-effect-error next-context new-context))
+                            (chain (execute-pending-effects executor injector new-context) continue)))))))))
+            :catch #(with-effect-error next-context %)))))))
 
 (defn effects "
 Creates an interceptor for executing effects.
 " [executor injector]
   {::name ::effects
-   ::enter (partial execute-pending-effects executor injector)})
+   ::enter #(execute-pending-effects executor injector %)})
 
 (defn errors "
 Creates an interceptor to log unhandled errors with clj-arsenal.log.
