@@ -3,12 +3,18 @@
    [clojure.walk :as walk]
    [clj-arsenal.basis.queue :refer [empty-queue]]
    [clj-arsenal.basis.protocols.chain :refer [chain chain-all chainable]]
-   [clj-arsenal.basis :refer [try-fn error?] :as basis]
+   [clj-arsenal.basis :refer [try-fn error? schedule-once] :as basis]
    [clj-arsenal.check :refer [check expect]]
    [clj-arsenal.log :refer [log spy]]))
 
 (defrecord Action [headers effects])
 (defrecord Injection [depth kind args])
+
+(defn- inject 
+  [{:keys [kind args] :as injection} injector context]
+  (case kind
+    ::decide (apply (first args) (rest args))
+    (injector context injection)))
 
 (defn- continue-dispatch
   [{pending-enter ::pending-enter pending-leave ::pending-leave :as context} on-finish]
@@ -70,14 +76,15 @@ a modified version of the same.
           (continue-dispatch context continue))))))
 
 (defn- apply-injections
-  [injector context form]
-  (chain-all form
-    :mapper (fn [x]
-              (if-not (instance? Injection x)
-                x
-                (if (pos? (:depth x))
-                  (update x :depth dec)
-                  (injector context x))))))
+  [injector context form continue]
+  (chain-all form continue
+    :mapper
+    (fn [x]
+      (if-not (instance? Injection x)
+        x
+        (if (pos? (:depth x))
+          (update x :depth dec)
+          (inject x injector context))))))
 
 (defn- with-effect-error
   [context error]
@@ -86,54 +93,98 @@ a modified version of the same.
     (assoc ::pending-enter empty-queue)))
 
 (defn execute-pending-effects
-  [executor injector {pending-effects ::pending-effects executed-effects ::executed-effects :as context}]
+  [executor injector {pending-effects ::pending-effects executed-effects ::executed-effects :as context} continue]
   (if (empty? pending-effects)
-    context
-    (chainable
-      (fn [continue]
-        (let [next-effect (peek pending-effects)
-              next-context (assoc context ::pending-effects (pop pending-effects))]
-          (try-fn
-            (fn []
-              (chain (apply-injections injector next-context next-effect)
-                (fn [resolved-next-effect]
-                  (if (error? resolved-next-effect)
-                    (continue resolved-next-effect)
-                    (let [next-context (assoc next-context ::executed-effects (conj executed-effects resolved-next-effect))]
-                      (chain (try-fn #(executor next-context resolved-next-effect) :catch identity)
-                        (fn [new-context]
-                          (if (error? new-context)
-                            (continue (with-effect-error next-context new-context))
-                            (chain (execute-pending-effects executor injector new-context) continue)))))))))
-            :catch #(with-effect-error next-context %)))))))
+    (continue context)
+    (let [next-effect (peek pending-effects)
+          next-pending-effects (pop pending-effects)
+          next-context (assoc context ::pending-effects next-pending-effects)]
+      (try-fn
+        (fn []
+          (apply-injections injector next-context next-effect
+            (fn [resolved-next-effects]
+              (cond
+                (or (nil? resolved-next-effects)
+                  (and (seq? resolved-next-effects)
+                    (empty? resolved-next-effects)))
+                (execute-pending-effects executor injector next-context continue)
+
+                (seq? resolved-next-effects)
+                (execute-pending-effects
+                  executor injector
+                  (assoc next-context ::pending-effects
+                    (into empty-queue (concat resolved-next-effects next-pending-effects)))
+                  continue)
+
+                (error? resolved-next-effects)
+                (do
+                  (continue resolved-next-effects)
+                  nil)
+
+                (and (vector? resolved-next-effects) (seq resolved-next-effects))
+                (if (instance? Injection next-effect)
+                  (execute-pending-effects
+                    executor injector
+                    (assoc next-context ::pending-effects
+                      (into empty-queue (cons resolved-next-effects next-pending-effects)))
+                    continue)
+                  (let [effect resolved-next-effects
+                        next-context (assoc next-context ::executed-effects (conj executed-effects effect))]
+                    (chain
+                      (try-fn
+                        #(executor next-context effect)
+                        :catch identity)
+                      (fn [new-context]
+                        (if (error? new-context)
+                          (continue (with-effect-error next-context new-context))
+                          (execute-pending-effects executor injector new-context continue))))))
+
+                :else
+                (throw (ex-info "invalid effect" {:p ::bad-effect :effect resolved-next-effects}))))))
+        :catch #(with-effect-error next-context %)))))
 
 (defn effects "
 Creates an interceptor for executing effects.
 " [executor injector]
   {::name ::effects
-   ::enter #(execute-pending-effects executor injector %)})
+   ::enter (fn [context]
+             (chainable
+               (fn [continue]
+                 (execute-pending-effects executor injector context continue))))})
 
 (defn errors "
 Creates an interceptor to log unhandled errors with clj-arsenal.log.
 " []
   {::name ::errors
    ::leave (fn [context]
-             (doseq [[interceptor-name {enter-error ::enter leave-error ::leave}] (::errors context)]
-               (when (error? enter-error)
-                 (log :error :msg "error entering interceptor" :interceptor interceptor-name :ex enter-error))
-               (when (error? leave-error)
-                 (log :error :msg "error leaving interceptor" :interceptor interceptor-name :ex leave-error)))
+             (doseq [[interceptor-name error-map] (::errors context)
+                     [error-stage error-val] error-map
+                     :when (error? error-val)
+                     :let [data (ex-data error-val)]
+                     :when (or (nil? data) (not (:no-doc (meta data))))]
+               (log :error
+                 :msg (case error-stage
+                        ::enter "error entering interceptor"
+                        ::leave "error leaving interceptor"
+                        "error in interceptor")
+                 :interceptor interceptor-name
+                 :action-key (-> context ::action :key)
+                 :ex error-val
+                 :st (:st data)))
              context)})
 
 (defn act "
 Create an action.  Use like `(act {:as headers} & effects)` or `(act & effects)`,
 where each effect is a vector with an effect kind, and zero or more args.
 " [& items]
-  (let [[headers effects] (if (map? (first items)) [(first items) (rest items)] [{} items])
+  (let [[headers effects]
+        (if (and (map? (first items)) (not (instance? Injection (first items))))
+          [(first items) (rest items)]
+          [{} items])
         effects (mapcat
                   (fn flatten-effects [effect]
                     (cond
-                      (and (vector? effect) (seq effect))
+                      (or (instance? Injection effect) (and (vector? effect) (seq effect)))
                       [effect]
                       
                       (seq? effect)
@@ -157,14 +208,24 @@ Creates an injection with a depth of 0.
 " [kind & args]
   (->Injection 0 kind (vec args)))
 
-(defn <<< "
-Creates an injection with an arbitrary nesting depth.
-The depth of an injection determines when it's evaluated.
-If the depth is <= 0 when an effect is executed then the
-injection is resolved via the injector; otherwise it resolves
-to the same injection with its depth decremented.
-" [depth kind & args]
-  (->Injection depth kind (vec args)))
+(defn decide "
+Creates an ::decide injector.
+
+```
+(decide
+  (fn [x y]
+    (if (= x y)
+      [:my-effecy x]
+      [:my-other-effect x y]))
+  (<< :inject-x)
+  (<< :inject-y))
+```
+
+Decision injections evaluate the given pure
+function, with the provided (generally injected)
+arguments.  Injecting the result.
+" [& args]
+  (->Injection 0 ::decide (vec args)))
 
 (defn inc-depth "
 Walks form, incrementing the depth of all injections.
@@ -211,27 +272,28 @@ Returns true if `x` is an injection.
                 (continue nil)))))))))
 
 (check ::enter-leave-with-chained-middleware
-  (let [dispatch (dispatcher
-                   [{::enter
-                     (fn [context]
-                       (chainable
-                         (fn [continue]
-                           (continue (assoc context ::entered-1 true)))))
-                     ::leave
-                     (fn [context]
-                       (chainable
-                         (fn [continue]
-                           (continue (assoc context ::left-1 true)))))}
-                    {::enter
-                     (fn [context]
-                       (chainable
-                         (fn [continue]
-                           (continue (assoc context ::entered-2 true)))))
-                     ::leave
-                     (fn [context]
-                       (chainable
-                         (fn [continue]
-                           (continue (assoc context ::left-2 true)))))}])]
+  (let [dispatch
+        (dispatcher
+          [{::enter
+            (fn [context]
+              (chainable
+                (fn [continue]
+                  (continue (assoc context ::entered-1 true)))))
+            ::leave
+            (fn [context]
+              (chainable
+                (fn [continue]
+                  (continue (assoc context ::left-1 true)))))}
+           {::enter
+            (fn [context]
+              (chainable
+                (fn [continue]
+                  (continue (assoc context ::entered-2 true)))))
+            ::leave
+            (fn [context]
+              (chainable
+                (fn [continue]
+                  (continue (assoc context ::left-2 true)))))}])]
     (chainable
       (fn [continue]
         (chain (dispatch (act [:foo]))
@@ -243,15 +305,47 @@ Returns true if `x` is an injection.
             (continue nil)))))))
 
 (check ::deep-injections
-  (let [injector (fn [context {:keys [kind args]}]
-                   (case kind
-                     :exact (first args)))]
+  (let [injector
+        (fn [_context {:keys [kind args]}]
+          (case kind
+            :exact (first args)))]
     (chainable
       (fn [continue]
-        (apply-injections injector nil [(<< :exact "foo") (<<< :exact "bar")]
+        (apply-injections injector nil [(<< :exact "foo") (inc-depth (<< :exact "bar"))]
           (fn [resolved]
             (try-fn
               (fn []
                 (expect = resolved ["foo" (<< :exact "bar")])
+                (continue nil))
+              :catch continue)))))))
+
+(check ::decide-effects
+  (let [dispatch
+        (dispatcher
+          [(effects
+             (fn executor
+               [context & _args]
+               context)
+             (fn injector
+               [_context & {:keys [kind]}]
+               (chainable
+                 (fn [continue]
+                   (schedule-once 1 continue kind)))))])]
+    (chainable
+      (fn [continue]
+        (chain
+          (dispatch
+            (act
+              (decide
+                (fn [x y]
+                  (list
+                    [:x x]
+                    [:y y]))
+                (<< :x)
+                (<< :y))))
+          (fn [{executed-effects ::executed-effects :as context}]
+            (try-fn
+              (fn []
+                (expect = executed-effects [[:x :x] [:y :y]])
                 (continue nil))
               :catch continue)))))))

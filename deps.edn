@@ -9,13 +9,12 @@
    :ns-default clj-arsenal.build}
   
   :dev
-  {:extra-deps {cider/cider-nrepl {:mvn/version "0.50.0"}
-                criterium/criterium {:mvn/version "0.4.6"}
-                org.clojure/data.fressian {:mvn/version "1.0.0"}
-                com.taoensso/nippy {:mvn/version "3.4.2"}}
-   :main-opts ["-m" "nrepl.cmdline" "--middleware" "[cider.nrepl/cider-middleware]"]
+  {:extra-paths ["dev"]
+   :extra-deps {cider/cider-nrepl {:mvn/version "0.50.0"}
+                thheller/shadow-cljs {:mvn/version "2.28.19"}}
+   :main-opts ["-m" "shadow.cljs.devtools.cli"]
    :clj-arsenal.check/enabled true
-   :clj-arsenal.check/ns-include-re "clj-arsenal[.]action([.].+)?"}}
+   :clj-arsenal.check/ns-include-re "(clj-arsenal[.]action([.].+)?|test)"}}
 
  :clj-arsenal.build/meta
  {:version "0.0.1"
