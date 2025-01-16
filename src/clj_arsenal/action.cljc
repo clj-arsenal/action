@@ -168,7 +168,7 @@ Creates an interceptor to log unhandled errors with clj-arsenal.log.
                         ::leave "error leaving interceptor"
                         "error in interceptor")
                  :interceptor interceptor-name
-                 :action-key (-> context ::action :key)
+                 :action-key (-> context ::action :headers :key)
                  :ex error-val
                  :st (:st data)))
              context)})
