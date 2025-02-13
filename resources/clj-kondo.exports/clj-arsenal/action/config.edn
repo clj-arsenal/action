@@ -1,0 +1,2 @@
+{:lint-as
+ {clj-arsenal.action/with-inj clojure.core/let}}
