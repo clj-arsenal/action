@@ -1,4 +1,5 @@
 (ns clj-arsenal.action
+  #?(:cljs (:require-macros clj-arsenal.action))
   (:require
    [clojure.walk :as walk]
    [clj-arsenal.basis.queue :refer [empty-queue]]
@@ -14,6 +15,7 @@
   [{:keys [kind args] :as injection} injector context]
   (case kind
     ::decide (apply (first args) (rest args))
+    ::context (get-in context (vec args))
     (injector context injection)))
 
 (defn- continue-dispatch
@@ -227,6 +229,17 @@ arguments.  Injecting the result.
 " [& args]
   (->Injection 0 ::decide (vec args)))
 
+(defn <<ctx "
+Creates a ::context injector.
+
+```
+(<<ctx :path :to :context :value)
+```
+
+These simply inject a value from the current context.
+" [& path]
+  (->Injection 0 ::context (vec path)))
+
 (defn inc-depth "
 Walks form, incrementing the depth of all injections.
 " [form]
@@ -251,6 +264,23 @@ Walks form, decrementing the depth of all injections.
 Returns true if `x` is an injection.
 " [x]
   (instance? Injection x))
+
+#?(:clj
+   (defmacro with-inj "
+Syntax sugar around `decide`.
+
+```
+(with-inj [foo (<<ctx :foo)
+           bar (<<ctx :bar)]
+ (+ foo bar))
+```
+" {:clj-kondo/lint-as 'clojure.core/let}
+  [bindings & body]
+  {:pre [(vector? bindings) (even? (count bindings))]}
+  (let [binding-pairs (partition 2 bindings)]
+    `(decide
+       (fn [~@(map first binding-pairs)] ~@body)
+       ~@(map second binding-pairs)))))
 
 (check ::simple-dispatch
   (let [executor (fn [context [kind & args]]
