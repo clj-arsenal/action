@@ -94,6 +94,24 @@ a modified version of the same.
     (assoc-in [::errors ::effects ::enter] error)
     (assoc ::pending-enter empty-queue)))
 
+(defn flatten-effects
+  [effects]
+  (mapcat
+    (fn [effect]
+      (cond
+        (or (instance? Injection effect) (and (vector? effect) (seq effect)))
+        (list effect)
+
+        (seq? effect)
+        (flatten-effects effect)
+
+        (nil? effect)
+        nil
+
+        :else
+        (throw (ex-info "invalid effect" {:problem ::bad-effect ::effect effect}))))
+    effects))
+
 (defn execute-pending-effects
   [executor injector {pending-effects ::pending-effects executed-effects ::executed-effects :as context} continue]
   (if (empty? pending-effects)
@@ -104,18 +122,21 @@ a modified version of the same.
       (try-fn
         (fn []
           (apply-injections injector next-context next-effect
-            (fn [resolved-next-effects]
+            (fn handle-resolved-effects [resolved-next-effects]
               (cond
                 (or (nil? resolved-next-effects)
                   (and (seq? resolved-next-effects)
                     (empty? resolved-next-effects)))
                 (execute-pending-effects executor injector next-context continue)
 
+                (instance? Injection resolved-next-effects)
+                (apply-injections injector next-context resolved-next-effects handle-resolved-effects)
+
                 (seq? resolved-next-effects)
                 (execute-pending-effects
                   executor injector
                   (assoc next-context ::pending-effects
-                    (into empty-queue (concat resolved-next-effects next-pending-effects)))
+                    (into empty-queue (concat (flatten-effects resolved-next-effects) next-pending-effects)))
                   continue)
 
                 (error? resolved-next-effects)
@@ -149,31 +170,37 @@ a modified version of the same.
 Creates an interceptor for executing effects.
 " [executor injector]
   {::name ::effects
-   ::enter (fn [context]
-             (chainable
-               (fn [continue]
-                 (execute-pending-effects executor injector context continue))))})
+
+   ::enter
+   (fn [context]
+     (chainable
+       (fn [continue]
+         (execute-pending-effects executor injector context continue))))})
 
 (defn errors "
 Creates an interceptor to log unhandled errors with clj-arsenal.log.
 " []
   {::name ::errors
-   ::leave (fn [context]
-             (doseq [[interceptor-name error-map] (::errors context)
-                     [error-stage error-val] error-map
-                     :when (error? error-val)
-                     :let [data (ex-data error-val)]
-                     :when (or (nil? data) (not (:no-doc (meta data))))]
-               (log :error
-                 :msg (case error-stage
-                        ::enter "error entering interceptor"
-                        ::leave "error leaving interceptor"
-                        "error in interceptor")
-                 :interceptor interceptor-name
-                 :action-key (-> context ::action :headers :key)
-                 :ex error-val
-                 :st (:st data)))
-             context)})
+
+   ::leave
+   (fn [context]
+     (doseq [[interceptor-name error-map] (::errors context)
+             [error-stage error-val] error-map
+             :when (error? error-val)
+             :let [data (ex-data error-val)
+                   action (::action context)
+                   action-key (-> action :headers :key)]
+             :when (or (nil? data) (not (:no-doc (meta data))))]
+       (log :error
+         :msg (case error-stage
+                ::enter "error entering interceptor"
+                ::leave "error leaving interceptor"
+                "error in interceptor")
+         :interceptor interceptor-name
+         :action (or action-key action)
+         :ex error-val
+         :st (:st data)))
+     context)})
 
 (defn act "
 Create an action.  Use like `(act {:as headers} & effects)` or `(act & effects)`,
@@ -183,21 +210,23 @@ where each effect is a vector with an effect kind, and zero or more args.
         (if (and (map? (first items)) (not (instance? Injection (first items))))
           [(first items) (rest items)]
           [{} items])
-        effects (mapcat
-                  (fn flatten-effects [effect]
-                    (cond
-                      (or (instance? Injection effect) (and (vector? effect) (seq effect)))
-                      [effect]
-                      
-                      (seq? effect)
-                      effect
-                      
-                      (nil? effect)
-                      nil
-                      
-                      :else
-                      (throw (ex-info "invalid effect" {:problem ::bad-effect ::effect effect}))))
-                  effects)]
+
+        effects
+        (mapcat
+          (fn flatten-effects [effect]
+            (cond
+              (or (instance? Injection effect) (and (vector? effect) (seq effect)))
+              [effect]
+
+              (seq? effect)
+              effect
+
+              (nil? effect)
+              nil
+
+              :else
+              (throw (ex-info "invalid effect" {:problem ::bad-effect ::effect effect}))))
+          effects)]
     (->Action headers effects)))
 
 (defn action? "
@@ -265,6 +294,45 @@ Returns true if `x` is an injection.
 " [x]
   (instance? Injection x))
 
+(defn- ^:macro-support gather-names
+  [form]
+  (basis/gather form symbol?))
+
+(defn- ^:macro-support with-inj*
+  [binding-pairs body]
+  (loop
+    [bound-names #{}
+     accepted-binding-pairs []
+     remaining-binding-pairs binding-pairs]
+    (cond
+      (empty? remaining-binding-pairs)
+      (cond
+        (empty? accepted-binding-pairs)
+        body
+
+        :else
+        `(decide
+           (fn [~@(map first accepted-binding-pairs)]
+             ~@body)
+           ~@(map second accepted-binding-pairs)))
+      
+      :else
+      (let
+        [[bind-pattern bind-expr :as next-binding-pair] (first remaining-binding-pairs)
+         expr-names (gather-names bind-expr)]
+        (cond
+          (contains? bound-names expr-names)
+          `(decide
+             (fn [~@(map first accepted-binding-pairs)]
+               ~@(with-inj* remaining-binding-pairs body))
+             ~@(map second accepted-binding-pairs))
+          
+          :else
+          (recur
+            (into bound-names (gather-names bind-pattern))
+            (conj accepted-binding-pairs next-binding-pair)
+            (rest remaining-binding-pairs)))))))
+
 #?(:clj
    (defmacro with-inj "
 Syntax sugar around `decide`.
@@ -277,10 +345,7 @@ Syntax sugar around `decide`.
 " {:clj-kondo/lint-as 'clojure.core/let}
   [bindings & body]
   {:pre [(vector? bindings) (even? (count bindings))]}
-  (let [binding-pairs (partition 2 bindings)]
-    `(decide
-       (fn [~@(map first binding-pairs)] ~@body)
-       ~@(map second binding-pairs)))))
+  (with-inj* (partition 2 bindings) body)))
 
 (check ::simple-dispatch
   (let [executor (fn [context [kind & args]]
@@ -357,7 +422,7 @@ Syntax sugar around `decide`.
                [context & _args]
                context)
              (fn injector
-               [_context & {:keys [kind]}]
+               [_context {:keys [kind]}]
                (chainable
                  (fn [continue]
                    (schedule-once 1 continue kind)))))])]
@@ -377,5 +442,91 @@ Syntax sugar around `decide`.
             (try-fn
               (fn []
                 (expect = executed-effects [[:x :x] [:y :y]])
+                (continue nil))
+              :catch continue)))))))
+
+(check ::flatten-injected-effects
+  (let [dispatch
+        (dispatcher
+          [(effects
+             (fn executor
+               [context & _args]
+               context)
+             (fn injector
+               [_context {:keys [kind]}]
+               kind))])]
+    (chainable
+      (fn [continue]
+        (chain
+          (dispatch
+            (act
+              (decide
+                (fn [x y z]
+                  (list
+                    [:x x]
+                    [:y y]
+                    nil
+                    (list
+                      [:z z])))
+                (<< :x)
+                (<< :y)
+                (<< :z))))
+          (fn [{executed-effects ::executed-effects}]
+            (try-fn
+              (fn []
+                (expect = executed-effects [[:x :x] [:y :y] [:z :z]])
+                (continue nil))
+              :catch continue)))))))
+
+(check ::recursive-injection
+  (let [dispatch
+        (dispatcher
+          [(effects
+             (fn executor
+               [context & _args]
+               context)
+             (fn injector
+               [_context {:keys [kind]}]
+               [kind kind]))])]
+    (chainable
+      (fn [continue]
+        (chain
+          (dispatch
+            (act
+              (decide
+                (fn []
+                  (<< :x)))))
+          (fn [{executed-effects ::executed-effects}]
+            (try-fn
+              (fn []
+                (expect = executed-effects [[:x :x]])
+                (continue nil))
+              :catch continue)))))))
+
+(check ::with-inj
+  (let [dispatch
+        (dispatcher
+          [(effects
+             (fn executor
+               [context & _args]
+               context)
+             (fn injector
+               [_context {:keys [kind]}]
+               kind))])]
+    (chainable
+      (fn [continue]
+        (chain
+          (dispatch
+            (act
+              (clj-arsenal.action/with-inj
+                [x (<< :x)
+                 y (<< :y)]
+                (list
+                  [x]
+                  [y]))))
+          (fn [{executed-effects ::executed-effects}]
+            (try-fn
+              (fn []
+                (expect = executed-effects [[:x] [:y]])
                 (continue nil))
               :catch continue)))))))
