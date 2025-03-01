@@ -1,7 +1,7 @@
 {:paths ["src" "resources"]
  :deps {me.raystubbs.clj-arsenal/check {:mvn/version "0.0.2"}
         me.raystubbs.clj-arsenal/log {:mvn/version "0.0.1"}
-        me.raystubbs.clj-arsenal/basis {:local/root "../basis" #_#_:mvn/version "0.0.4"}}
+        me.raystubbs.clj-arsenal/basis {:mvn/version "0.0.6"}}
 
  :aliases
  {:build
