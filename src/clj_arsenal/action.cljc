@@ -1,5 +1,6 @@
 (ns clj-arsenal.action
   #?(:cljs (:require-macros clj-arsenal.action))
+  #?(:cljd/clj-host (:host-ns (:require [clj-arsenal.basis :as basis])))
   (:require
    [clojure.walk :as walk]
    [clj-arsenal.basis.queue :refer [empty-queue]]
@@ -321,7 +322,7 @@ Returns true if `x` is an injection.
         [[bind-pattern bind-expr :as next-binding-pair] (first remaining-binding-pairs)
          expr-names (gather-names bind-expr)]
         (cond
-          (contains? bound-names expr-names)
+          (some bound-names expr-names)
           `(decide
              (fn [~@(map first accepted-binding-pairs)]
                ~@(with-inj* remaining-binding-pairs body))
