@@ -325,7 +325,7 @@ Returns true if `x` is an injection.
           (some bound-names expr-names)
           `(decide
              (fn [~@(map first accepted-binding-pairs)]
-               ~@(with-inj* remaining-binding-pairs body))
+               ~(with-inj* remaining-binding-pairs body))
              ~@(map second accepted-binding-pairs))
           
           :else
