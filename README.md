@@ -154,7 +154,7 @@ dispatching action (the one with the `:dispatch` effect), instead of against
 the new context created by dispatching the action, as might be intended.
 
 So, to deal with situations like this, we have two utilities `action/inc-depth`
-and `action/dec-depth`.  These will walk a form an increment or decrement any
+and `action/dec-depth`.  These will walk a form and increment or decrement any
 injections found within it.  In the previous example `success-act` and `failure-act`
 should probably be depth incremented.
 
@@ -169,6 +169,6 @@ should probably be depth incremented.
           [:dispatch (action/inc-depth success-act)]
 
           "failure"
-          [:dispatch (action/dec-depth failure-act) {:errors errors}]))))
+          [:dispatch (action/inc-depth failure-act) {:errors errors}]))))
 
 ```
