@@ -1,13 +1,15 @@
 {:paths ["src" "resources"]
- :deps {me.raystubbs.clj-arsenal/check {:mvn/version "0.0.2"}
-        me.raystubbs.clj-arsenal/log {:mvn/version "0.0.1"}
-        me.raystubbs.clj-arsenal/basis {:mvn/version "0.0.6"}}
+
+ :deps
+ {me.raystubbs.clj-arsenal/check {:mvn/version "0.0.2"}
+  me.raystubbs.clj-arsenal/log {:mvn/version "0.0.1"}
+  me.raystubbs.clj-arsenal/basis {:mvn/version "0.0.7"}}
 
  :aliases
  {:build
   {:deps {me.raystubbs.clj-arsenal/build {:mvn/version "0.0.6"}}
    :ns-default clj-arsenal.build}
-  
+
   :dev
   {:extra-paths ["dev"]
    :extra-deps {cider/cider-nrepl {:mvn/version "0.50.0"}
