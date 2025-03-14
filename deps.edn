@@ -3,7 +3,7 @@
  :deps
  {me.raystubbs.clj-arsenal/check {:mvn/version "0.0.2"}
   me.raystubbs.clj-arsenal/log {:mvn/version "0.0.1"}
-  me.raystubbs.clj-arsenal/basis {:mvn/version "0.0.7"}}
+  me.raystubbs.clj-arsenal/basis {:mvn/version "0.0.8"}}
 
  :aliases
  {:build
