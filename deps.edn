@@ -1,19 +1,33 @@
 {:paths ["src" "resources"]
 
  :deps
- {me.raystubbs.clj-arsenal/check {:mvn/version "0.0.2"}
-  me.raystubbs.clj-arsenal/log {:mvn/version "0.0.1"}
-  me.raystubbs.clj-arsenal/basis {:mvn/version "0.0.8"}}
+ {me.raystubbs.clj-arsenal/check
+  {:git/url "https://github.com/clj-arsenal/check.git"
+   :git/sha "a15d24fe5be392090bcbd457f54d978d302dbd93"}
+
+  me.raystubbs.clj-arsenal/log
+  {:git/url "https://github.com/clj-arsenal/log.git"
+   :git/sha "6f49191729472c1d75c9074e17fa53c74ace84c3"}
+
+  me.raystubbs.clj-arsenal/basis
+  {:git/url "https://github.com/clj-arsenal/basis.git"
+   :git/sha "6641f8c220cc1ef5b29cdec1b552414ab8dbf104"}}
 
  :aliases
  {:build
-  {:deps {me.raystubbs.clj-arsenal/build {:mvn/version "0.0.6"}}
+  {:deps
+   {me.raystubbs.clj-arsenal/build {:mvn/version "0.0.6"}}
+
    :ns-default clj-arsenal.build}
 
   :dev
-  {:extra-paths ["dev"]
-   :extra-deps {cider/cider-nrepl {:mvn/version "0.50.0"}
-                thheller/shadow-cljs {:mvn/version "2.28.19"}}
+  {:extra-paths
+   ["dev"]
+
+   :extra-deps
+   {cider/cider-nrepl {:mvn/version "0.50.0"}
+    thheller/shadow-cljs {:mvn/version "2.28.19"}}
+
    :main-opts ["-m" "shadow.cljs.devtools.cli"]
    :clj-arsenal.check/enabled true
    :clj-arsenal.check/ns-include-re "(clj-arsenal[.]action([.].+)?|test)"}}
