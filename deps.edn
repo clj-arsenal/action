@@ -8,7 +8,7 @@
   {:mvn/version "0.0.2"}
 
   me.raystubbs.clj-arsenal/basis
-  {:mvn/version "0.0.9"}}
+  {:mvn/version "0.0.12"}}
 
  :aliases
  {:build
