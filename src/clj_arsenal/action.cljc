@@ -141,7 +141,7 @@ a modified version of the same.
 
               (err? resolved-next-effects)
               (do
-                (continue resolved-next-effects)
+                (continue (with-effect-error next-context resolved-next-effects))
                 nil)
 
               (and (vector? resolved-next-effects) (seq resolved-next-effects))
