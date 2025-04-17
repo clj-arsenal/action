@@ -1,15 +1,17 @@
 (ns clj-arsenal.action
   #?(:cljs (:require-macros clj-arsenal.action))
   #?(:cljd/clj-host (:host-ns (:require [clj-arsenal.basis :as b])))
+  (:refer-clojure :exclude [quote unquote])
   (:require
    [clojure.walk :as walk]
    [clj-arsenal.basis.queue :refer [empty-queue]]
-   [clj-arsenal.basis :refer [err? schedule-once chain chain-all chainable m] :as b]
+   [clj-arsenal.basis :refer [err? schedule-once chain chainable m] :as b]
    [clj-arsenal.check :refer [check expect]]
    [clj-arsenal.log :refer [log spy]]))
 
 (defrecord Action [headers effects])
-(defrecord Injection [depth kind args])
+(defrecord Injection [kind args])
+(defrecord ^:private Literal [v])
 
 (defn- continue-dispatch
   [{pending-enter ::pending-enter pending-leave ::pending-leave :as context} on-finish]
@@ -66,28 +68,75 @@ a modified version of the same.
   (fn dispatch [action & context-builder-params]
     (when-not (instance? Action action)
       (throw (b/err :p ::dispatched-something-not-action :dispatched action)))
-    (let [context-stub {::action action
-                        ::pending-effects (into empty-queue (.-effects ^Action action))
-                        ::executed-effects []
-                        ::pending-enter (into empty-queue interceptors)
-                        ::pending-leave []}
-          context (if (ifn? context-builder)
-                    (apply context-builder context-stub context-builder-params)
-                    context-stub)]
+    (let
+      [context-stub
+       {::action action
+        ::pending-effects (into empty-queue (.-effects ^Action action))
+        ::executed-effects []
+        ::pending-enter (into empty-queue interceptors)
+        ::pending-leave []}
+
+       context
+       (if (ifn? context-builder)
+         (apply context-builder context-stub context-builder-params)
+         context-stub)]
       (chainable
         (fn [continue]
           (continue-dispatch context continue))))))
 
+(defn- apply-injections-substitute
+  [injected x]
+  (cond
+    (instance? Injection x)
+    (let [x-injected (get injected x)]
+      (if (instance? Literal x-injected)
+        (.-v ^Literal x-injected)
+        x-injected))
+    
+    (instance? Literal x)
+    (.-v ^Literal x)
+
+    (coll? x)
+    (walk/walk
+      (partial apply-injections-substitute injected)
+      identity
+      x)
+
+    :else
+    x))
+
 (defn- apply-injections
   [injector context form continue]
-  (chain-all form continue
-    :mapper
-    (fn [x]
-      (if-not (instance? Injection x)
-        x
-        (if (pos? (:depth x))
-          (update x :depth dec)
-          (injector context x))))))
+  (m
+    (chain
+      (b/chain-all-seq
+        (map
+          (fn [inj]
+            (chainable
+              (fn [continue-inner]
+                (apply-injections injector context (:args inj)
+                  (fn [resolved-args]
+                    (if (b/err? resolved-args)
+                      (continue-inner [inj resolved-args])
+                      (chain
+                        (injector context (assoc inj :args resolved-args))
+                        (fn [injected]
+                          (continue-inner [inj injected])))))))))
+          (distinct
+            (b/gather form #(instance? Injection %)
+              :select
+              (fn [x]
+                (when-not (instance? Literal x)
+                  x))))))
+      (fn [injected]
+        (let
+          [injected (into {} injected)
+           error (some #(when (b/err? %) %) (vals injected))]
+          (if (some? error)
+            (continue error)
+            (continue (apply-injections-substitute injected form))))))
+    :catch b/err-any err
+    (continue err)))
 
 (defn- with-effect-error
   [context error]
@@ -243,7 +292,7 @@ Returns true if `x` is an action.
 (defn << "
 Creates an injection with a depth of 0.
 " [kind & args]
-  (->Injection 0 kind (vec args)))
+  (->Injection kind (vec args)))
 
 (defn decide "
 Creates an ::decide injector.
@@ -262,7 +311,7 @@ Decision injections evaluate the given pure
 function, with the provided (generally injected)
 arguments.  Injecting the result.
 " [& args]
-  (->Injection 0 ::decide (vec args)))
+  (->Injection ::decide (vec args)))
 
 (defn <<ctx "
 Creates a ::context injector.
@@ -273,26 +322,24 @@ Creates a ::context injector.
 
 These simply inject a value from the current context.
 " [& path]
-  (->Injection 0 ::context (vec path)))
+  (->Injection ::context (vec path)))
 
-(defn inc-depth "
-Walks form, incrementing the depth of all injections.
-" [form]
-  (walk/postwalk
-    (fn [x]
-      (if (instance? Injection x)
-        (update x :depth inc)
-        x))
-    form))
+(defn <<err "
+Creates an ::error injector, which injects an
+error with in a way that doesn't cause failure.
+" [& data]
+  (->Injection ::error (vec data)))
 
-(defn dec-depth "
-Walks form, decrementing the depth of all injections.
+(defn quote "
+Quotes `form`, preventing injections from being applied.
 " [form]
-  (walk/postwalk
-    (fn [x]
-      (if (instance? Injection x)
-        (update x :depth dec)
-        x))
+  (->Literal form))
+
+(defn unquote "
+Unquote `form`.
+" [form]
+  (if (instance? Literal form)
+    (.-v ^Literal form)
     form))
 
 (defn injection? "
@@ -308,7 +355,8 @@ injections like those produced by `<<ctx`, `with-inj`,
   (fn [context {:keys [kind args] :as injection}]
     (case kind
       ::decide (apply (first args) (rest args))
-      ::context (get-in context (vec args))
+      ::context (->Literal (get-in context (vec args)))
+      ::error (->Literal (apply b/err args))
       (injector context injection))))
 
 (defn- ^:macro-support gather-names
@@ -423,7 +471,7 @@ Syntax sugar around `decide`.
             :exact (first args)))]
     (chainable
       (fn [continue]
-        (apply-injections injector nil [(<< :exact "foo") (inc-depth (<< :exact "bar"))]
+        (apply-injections injector nil [(<< :exact "foo") (quote (<< :exact "bar"))]
           (fn [resolved]
             (m
               (expect = resolved ["foo" (<< :exact "bar")])
