@@ -30,7 +30,7 @@
    :clj-arsenal.check/ns-include-re "(clj-arsenal[.]action([.].+)?|test)"}}
 
  :clj-arsenal.build/meta
- {:version "0.0.11"
+ {:version "0.0.12"
   :name me.raystubbs.clj-arsenal/action
   :license "The MIT License"
   :license-url "https://opensource.org/license/mit/"
