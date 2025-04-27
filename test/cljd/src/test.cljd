@@ -1,0 +1,9 @@
+(ns test
+  (:require
+   [clj-arsenal.check :as check]
+   [clj-arsenal.action]))
+
+(defn main
+  []
+  (check/run)
+  (check/report-all-checks-and-exit!))

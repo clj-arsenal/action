@@ -2,7 +2,4 @@
   "dependencies": {
     "shadow-cljs": "^2.28.20"
   },
-  "scripts": {
-    "test": "clj -M:dev compile test && node target/test.js"
-  }
 }

@@ -1,0 +1,44 @@
+{:tasks
+ {test-clj
+  (binding
+    [*out* *err*]
+    (println "Running Clojure tests...")
+    (shell {:dir "test/clj"} "clj -X:test test/run"))
+
+  test-cljs:compile
+  (binding
+    [*out* *err*]
+    (println "Compiling ClojureScript tests...")
+    (shell {:dir "test/cljs"} "clj -M:cljs compile test"))
+
+  test-cljs
+  {:depends
+   [test-cljs:compile]
+
+   :task
+   (binding
+     [*out* *err*]
+     (println "Running ClojureScript tests...")
+     (shell {:dir "test/cljs"} "node target/test.js"))}
+
+  test-cljd:compile
+  (binding
+    [*out* *err*]
+    (println "Compiling ClojureDart tests...")
+    (shell {:dir "test/cljd"} "clj -M:cljd compile"))
+
+  test-cljd
+  {:depends
+   [test-cljd:compile]
+
+   :task
+   (binding
+     [*out* *err*]
+     (println "Running ClojureDart tests...")
+     (shell {:dir "test/cljd"} "dart run"))}
+
+  test-all
+  {:depends [test-clj test-cljs test-cljd]}
+  
+  nrepl
+  (shell {:dir "test/cljs"} "clj -M:cljs node-repl")}}

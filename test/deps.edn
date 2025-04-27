@@ -1,0 +1,6 @@
+{:deps
+ {me.raystubbs.clj-arsenal/action
+  {:local/root ".."}
+
+  me.raystubbs.clj-arsenal/check
+  {:mvn/version "0.0.6"}}}

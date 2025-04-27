@@ -471,7 +471,7 @@ Syntax sugar around `decide`.
             :exact (first args)))]
     (chainable
       (fn [continue]
-        (apply-injections injector nil [(<< :exact "foo") (quote (<< :exact "bar"))]
+        (apply-injections injector nil [(<< :exact "foo") (clj-arsenal.action/quote (<< :exact "bar"))]
           (fn [resolved]
             (m
               (expect = resolved ["foo" (<< :exact "bar")])
