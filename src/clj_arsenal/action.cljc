@@ -111,7 +111,7 @@ a modified version of the same.
     (chain
       (b/chain-all-seq
         (map
-          (fn [inj]
+          (fn resolve-inj [inj]
             (chainable
               (fn [continue-inner]
                 (apply-injections injector context (:args inj)
@@ -121,7 +121,12 @@ a modified version of the same.
                       (chain
                         (injector context (assoc inj :args resolved-args))
                         (fn [injected]
-                          (continue-inner [inj injected])))))))))
+                          (if-not (instance? Injection injected)
+                            (continue-inner [inj injected])
+                            (chain
+                              (resolve-inj injected)
+                              (fn [[_ injected-final]]
+                                (continue-inner [inj injected-final]))))))))))))
           (distinct
             (b/gather form #(instance? Injection %)
               :select
