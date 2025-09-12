@@ -105,7 +105,7 @@ a modified version of the same.
     :else
     x))
 
-(defn- apply-injections
+(defn apply-injections
   [injector context form continue]
   (m
     (chain
