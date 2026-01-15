@@ -3,6 +3,7 @@
   #?(:cljd/clj-host (:host-ns (:require [clj-arsenal.basis :as b])))
   (:refer-clojure :exclude [quote unquote])
   (:require
+   #?(:cljd [cljd.core :refer [IFn]])
    [clojure.walk :as walk]
    [clj-arsenal.basis.queue :refer [empty-queue]]
    [clj-arsenal.basis :refer [err? schedule-once chain chainable m] :as b]
@@ -59,30 +60,209 @@
     (on-finish context))
   nil)
 
+(declare ->Dispatcher dispatcher-call)
+
+(deftype Dispatcher [dispatch-fn base-context]
+  #?@(:cljs
+      [IFn
+       (-invoke [this]
+         (dispatcher-call this []))
+       (-invoke [this x]
+        (dispatcher-call this [x]))
+       (-invoke [this x1 x2]
+        (dispatcher-call this [x1 x2]))
+       (-invoke [this x1 x2 x3]
+        (dispatcher-call this [x1 x2 x3]))
+       (-invoke [this x1 x2 x3 x4]
+        (dispatcher-call this [x1 x2 x3 x4]))
+       (-invoke [this x1 x2 x3 x4 x5]
+        (dispatcher-call this [x1 x2 x3 x4 x5]))
+       (-invoke [this x1 x2 x3 x4 x5 x6]
+        (dispatcher-call this [x1 x2 x3 x4 x5 x6]))
+       (-invoke [this x1 x2 x3 x4 x5 x6 x7]
+        (dispatcher-call this [x1 x2 x3 x4 x5 x6 x7]))
+       (-invoke [this x1 x2 x3 x4 x5 x6 x7 x8]
+        (dispatcher-call this [x1 x2 x3 x4 x5 x6 x7 x8]))
+       (-invoke [this x1 x2 x3 x4 x5 x6 x7 x8 x9]
+        (dispatcher-call this [x1 x2 x3 x4 x5 x6 x7 x8 x9]))
+       (-invoke [this x1 x2 x3 x4 x5 x6 x7 x8 x9 x10]
+        (dispatcher-call this [x1 x2 x3 x4 x5 x6 x7 x8 x9 x10]))
+       (-invoke [this x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11]
+        (dispatcher-call this [x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11]))
+       (-invoke [this x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12]
+        (dispatcher-call this [x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12]))
+       (-invoke [this x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13]
+        (dispatcher-call this [x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13]))
+       (-invoke [this x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14]
+        (dispatcher-call this [x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14]))
+       (-invoke [this x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15]
+        (dispatcher-call this [x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15]))
+       (-invoke [this x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 x16]
+        (dispatcher-call this [x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 x16]))
+       (-invoke [this x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 x16 x17]
+        (dispatcher-call this [x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 x16 x17]))
+       (-invoke [this x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 x16 x17 x18]
+        (dispatcher-call this [x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 x16 x17 x18]))
+       (-invoke [this x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 x16 x17 x18 x19]
+        (dispatcher-call this [x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 x16 x17 x18 x19]))
+       (-invoke [this x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 x16 x17 x18 x19 x20]
+        (dispatcher-call this [x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 x16 x17 x18 x19 x20]))
+       (-invoke [this x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 x16 x17 x18 x19 x20 args]
+        (dispatcher-call this (into [x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 x16 x17 x18 x19 x20] args)))]
+
+      :cljd
+      [IFn
+       (-invoke [this]
+        (dispatcher-call this []))
+       (-invoke [this x]
+        (dispatcher-call this [x]))
+       (-invoke [this x1 x2]
+        (dispatcher-call this [x1 x2]))
+       (-invoke [this x1 x2 x3]
+        (dispatcher-call this [x1 x2 x3]))
+       (-invoke [this x1 x2 x3 x4]
+        (dispatcher-call this [x1 x2 x3 x4]))
+       (-invoke [this x1 x2 x3 x4 x5]
+        (dispatcher-call this [x1 x2 x3 x4 x5]))
+       (-invoke [this x1 x2 x3 x4 x5 x6]
+        (dispatcher-call this [x1 x2 x3 x4 x5 x6]))
+       (-invoke [this x1 x2 x3 x4 x5 x6 x7]
+        (dispatcher-call this [x1 x2 x3 x4 x5 x6 x7]))
+       (-invoke [this x1 x2 x3 x4 x5 x6 x7 x8]
+        (dispatcher-call this [x1 x2 x3 x4 x5 x6 x7 x8]))
+       (-invoke [this x1 x2 x3 x4 x5 x6 x7 x8 x9]
+        (dispatcher-call this [x1 x2 x3 x4 x5 x6 x7 x8 x9]))
+       (-invoke-more [this x1 x2 x3 x4 x5 x6 x7  x8 x9 rest]
+         (dispatcher-call this (into [x1 x2 x3 x4 x5 x6 x7 x8 x9] rest)))
+       (-apply [this more]
+         (dispatcher-call this more))]
+
+      :clj
+      [clojure.lang.IFn
+       (invoke
+         [this]
+         (dispatcher-call this []))
+       (invoke
+         [this x]
+         (dispatcher-call this [x]))
+       (invoke
+         [this x1 x2]
+         (dispatcher-call this [x1 x2]))
+       (invoke
+         [this x1 x2 x3]
+         (dispatcher-call this [x1 x2 x3]))
+       (invoke
+         [this x1 x2 x3 x4]
+         (dispatcher-call this [x1 x2 x3 x4]))
+       (invoke
+         [this x1 x2 x3 x4 x5]
+         (dispatcher-call this [x1 x2 x3 x4 x5]))
+       (invoke
+         [this x1 x2 x3 x4 x5 x6]
+         (dispatcher-call this [x1 x2 x3 x4 x5 x6]))
+       (invoke
+         [this x1 x2 x3 x4 x5 x6 x7]
+         (dispatcher-call this [x1 x2 x3 x4 x5 x6 x7]))
+       (invoke
+         [this x1 x2 x3 x4 x5 x6 x7 x8]
+         (dispatcher-call this [x1 x2 x3 x4 x5 x6 x7 x8]))
+       (invoke
+         [this x1 x2 x3 x4 x5 x6 x7 x8 x9]
+         (dispatcher-call this [x1 x2 x3 x4 x5 x6 x7 x8 x9]))
+       (invoke
+         [this x1 x2 x3 x4 x5 x6 x7 x8 x9 x10]
+         (dispatcher-call this [x1 x2 x3 x4 x5 x6 x7 x8 x9 x10]))
+       (invoke
+         [this x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11]
+         (dispatcher-call this [x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11]))
+       (invoke
+         [this x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12]
+         (dispatcher-call this [x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12]))
+       (invoke
+         [this x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13]
+         (dispatcher-call this [x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13]))
+       (invoke
+         [this x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14]
+         (dispatcher-call this [x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14]))
+       (invoke
+         [this x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15]
+         (dispatcher-call this [x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15]))
+       (invoke
+         [this x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 x16]
+         (dispatcher-call this [x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 x16]))
+       (invoke
+         [this x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 x16 x17]
+         (dispatcher-call this [x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 x16 x17]))
+       (invoke
+         [this x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 x16 x17 x18]
+         (dispatcher-call this [x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 x16 x17 x18]))
+       (invoke
+         [this x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 x16 x17 x18 x19]
+         (dispatcher-call this [x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 x16 x17 x18 x19]))
+       (invoke
+         [this x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 x16 x17 x18 x19 x20]
+         (dispatcher-call this [x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 x16 x17 x18 x19 x20]))
+       (invoke
+         [this x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 x16 x17 x18 x19 x20 args]
+         (dispatcher-call this (into [x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 x16 x17 x18 x19 x20] args)))
+       (applyTo
+         [this args]
+         (dispatcher-call this args))]))
+
+(defn- dispatcher-call
+  [^Dispatcher dispatcher args]
+  ((.-dispatch-fn dispatcher) dispatcher (.-base-context dispatcher) (first args) (rest args)))
+
 (defn dispatcher "
 Create a dispatcher.  `interceptors` is an ordered collection
 of interceptors.  `context-builder` is an optional function
 that takes a minimal initial dispatch context, and returns
 a modified version of the same.
-" [interceptors & {:keys [context-builder]}]
-  (fn dispatch [action & context-builder-params]
-    (when-not (instance? Action action)
-      (throw (b/err :p ::dispatched-something-not-action :dispatched action)))
-    (let
-      [context-stub
-       {::action action
-        ::pending-effects (into empty-queue (.-effects ^Action action))
-        ::executed-effects []
-        ::pending-enter (into empty-queue interceptors)
-        ::pending-leave []}
+" [interceptors & {:keys [context-builder dispatch-wrapper] :or {dispatch-wrapper identity}}]
+  (let
+    [dispatch-impl
+     (fn dispatch [dispatcher base-context action args]
+       (when-not (instance? Action action)
+         (throw (b/err :p ::dispatched-something-not-action :dispatched action)))
+       (let
+         [context-stub
+          {::action action
+           ::pending-effects (into empty-queue (.-effects ^Action action))
+           ::executed-effects []
+           ::pending-enter (into empty-queue interceptors)
+           ::pending-leave []
+           ::dispatcher dispatcher}
 
-       context
-       (if (ifn? context-builder)
-         (apply context-builder context-stub context-builder-params)
-         context-stub)]
-      (chainable
-        (fn [continue]
-          (continue-dispatch context continue))))))
+          context-basis
+          (merge base-context context-stub)
+
+          context
+          (cond
+            (ifn? context-builder)
+            (apply context-builder context-basis args)
+
+            (seq args)
+            (merge context-basis (first args))
+            
+            :else
+            context-basis)]
+         (chainable
+           (fn [continue]
+             (continue-dispatch context continue)))))
+     
+     dispatch-fn
+     (dispatch-wrapper dispatch-impl)]
+    (->Dispatcher dispatch-fn {})))
+
+(defn with-extra-context "
+Returns a new dispatcher with the given context merged into the current base context.
+" [^Dispatcher dispatcher extra-context]
+  (->Dispatcher (.-dispatch-fn dispatcher) (merge (.-base-context dispatcher) extra-context)))
+
+(defn with-replace-context "
+Returns a new dispatcher with the given context replacing the current base context.
+" [^Dispatcher dispatcher new-context]
+  (->Dispatcher (.-dispatch-fn dispatcher) new-context))
 
 (defn- apply-injections-substitute
   [injected x]
