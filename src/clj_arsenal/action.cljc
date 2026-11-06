@@ -62,7 +62,32 @@
 
 (declare ->Dispatcher dispatcher-call)
 
-(deftype Dispatcher [dispatch-fn base-context]
+#?(:bb
+   (do
+     (defprotocol DispatcherFields
+       (-dispatch-fn [dispatcher])
+       (-base-context [dispatcher]))
+
+     ;; bb's deftype can't implement IFn, but its reify can.
+     (defn ->Dispatcher
+       [dispatch-fn base-context]
+       (reify
+         DispatcherFields
+         (-dispatch-fn [_] dispatch-fn)
+         (-base-context [_] base-context)
+
+         clojure.lang.IFn
+         (invoke [this] (dispatcher-call this []))
+         (invoke [this x] (dispatcher-call this [x]))
+         (invoke [this x1 x2] (dispatcher-call this [x1 x2]))
+         (invoke [this x1 x2 x3] (dispatcher-call this [x1 x2 x3]))
+         (invoke [this x1 x2 x3 x4] (dispatcher-call this [x1 x2 x3 x4]))
+         (invoke [this x1 x2 x3 x4 x5] (dispatcher-call this [x1 x2 x3 x4 x5]))
+         (invoke [this x1 x2 x3 x4 x5 x6] (dispatcher-call this [x1 x2 x3 x4 x5 x6]))
+         (applyTo [this args] (dispatcher-call this args)))))
+
+   :default
+   (deftype Dispatcher [dispatch-fn base-context]
   #?@(:cljs
       [IFn
        (-invoke [this]
@@ -207,11 +232,31 @@
          (dispatcher-call this (into [x1 x2 x3 x4 x5 x6 x7 x8 x9 x10 x11 x12 x13 x14 x15 x16 x17 x18 x19 x20] args)))
        (applyTo
          [this args]
-         (dispatcher-call this args))]))
+         (dispatcher-call this args))])))
+
+#?(:bb
+   (do
+     (defn- dispatcher-dispatch-fn
+       [dispatcher]
+       (-dispatch-fn dispatcher))
+
+     (defn- dispatcher-base-context
+       [dispatcher]
+       (-base-context dispatcher)))
+
+   :default
+   (do
+     (defn- dispatcher-dispatch-fn
+       [^Dispatcher dispatcher]
+       (.-dispatch-fn dispatcher))
+
+     (defn- dispatcher-base-context
+       [^Dispatcher dispatcher]
+       (.-base-context dispatcher))))
 
 (defn- dispatcher-call
-  [^Dispatcher dispatcher args]
-  ((.-dispatch-fn dispatcher) dispatcher (.-base-context dispatcher) (first args) (rest args)))
+  [dispatcher args]
+  ((dispatcher-dispatch-fn dispatcher) dispatcher (dispatcher-base-context dispatcher) (first args) (rest args)))
 
 (defn dispatcher "
 Create a dispatcher.  `interceptors` is an ordered collection
@@ -256,13 +301,13 @@ a modified version of the same.
 
 (defn with-extra-context "
 Returns a new dispatcher with the given context merged into the current base context.
-" [^Dispatcher dispatcher extra-context]
-  (->Dispatcher (.-dispatch-fn dispatcher) (merge (.-base-context dispatcher) extra-context)))
+" [dispatcher extra-context]
+  (->Dispatcher (dispatcher-dispatch-fn dispatcher) (merge (dispatcher-base-context dispatcher) extra-context)))
 
 (defn with-replace-context "
 Returns a new dispatcher with the given context replacing the current base context.
-" [^Dispatcher dispatcher new-context]
-  (->Dispatcher (.-dispatch-fn dispatcher) new-context))
+" [dispatcher new-context]
+  (->Dispatcher (dispatcher-dispatch-fn dispatcher) new-context))
 
 (defn- apply-injections-substitute
   [injected x]
